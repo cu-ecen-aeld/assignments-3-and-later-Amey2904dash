@@ -174,6 +174,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
             perror("dup2"); 
             return false;
         }
+        
         close(fd);
         execv(command[0],command);
     
