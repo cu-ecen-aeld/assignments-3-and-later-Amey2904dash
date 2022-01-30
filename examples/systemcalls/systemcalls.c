@@ -109,6 +109,7 @@ bool do_exec(int count, ...)
             perror("ERROR : wait");
             return false;
         }
+        
         if ( ! (WIFEXITED(status)) ||  (WEXITSTATUS(status)) )	//error
         {
             perror("ERROR : wait");
