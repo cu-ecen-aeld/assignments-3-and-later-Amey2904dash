@@ -195,6 +195,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
             perror("Waitstatus");
             return false;
         }
+        
     }
     va_end(args);
     printf("Do execv redirect succeeded!!\n");
