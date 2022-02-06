@@ -80,6 +80,7 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int 
      */
      
     int retVal;
+    
     struct thread_data *threadData;
     
     threadData = (struct thread_data *) malloc(sizeof (struct thread_data));
