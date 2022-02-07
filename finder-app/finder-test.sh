@@ -41,6 +41,19 @@ else
 	exit 1
 fi
 
+#To check if writer is in path
+if [ -z $(which writer) ]
+then 
+	echo writer is not in path!
+	exit 1
+fi
+
+#To check if finder.sh is in path
+if [ -z $(which finder.sh) ]
+then 
+	echo finder.sh is not in path!
+	exit 1
+fi
 
 #echo "Removing the old writer utility and compiling as a native application"
 #make clean
