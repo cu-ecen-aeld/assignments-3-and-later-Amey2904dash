@@ -1,8 +1,3 @@
-/***********************************************************************************************************************
- * Author       : Amey Sharad Dashaputre
- * File Name    : aesdsocket.c
- * Description  : Socket Functions implementation
- ***********************************************************************************************************************/
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -18,6 +13,9 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <sys/queue.h>
+#include <sys/time.h>
 
 /******************MACROS******************************/
 #define FILE_STORAGE_PATH   "/var/tmp/aesdsocketdata"
@@ -30,10 +28,120 @@
 #define MAX_CONNECTIONS   	10
 
 /******************GLOBAL VARIABLES******************************/
-char *output_buffer = NULL;
+//char *output_buffer = NULL;
 int socket_fd = 0; //socket file descriptor
 int socket_accept_fd = 0;
 char *port = "9000";
+int file_fd = 0;
+int received_packet_size = 0;
+char ch = 0;
+
+void* thread_handler(void* thread_param);
+
+typedef struct{
+	bool thread_comp_flag;
+	pthread_t thread_id;
+	int cl_accept_fd;
+	pthread_mutex_t *mutex;
+}thread_params;
+
+//Linked list node
+struct slist_data_s{
+	thread_params	thread_param;
+	SLIST_ENTRY(slist_data_s) entries;
+};
+
+typedef struct slist_data_s slist_data_t;
+pthread_mutex_t mutex_lock = PTHREAD_MUTEX_INITIALIZER;
+slist_data_t *datap = NULL;
+
+
+/***********************************************************************************************
+* Name          	: timer_handler
+* Description   	: used to catch SIGALRM after timer expiry.
+* Input Parameters  : sig_no - the signal received to be handled.
+* Returns        	: None
+***********************************************************************************************/
+static void timer_handler(int sig_no)
+{
+	
+	char time_stamp[200];													
+	time_t t;
+	struct tm *time_ptr;
+	int timer_length = 0;
+	int mutex_return_val;
+	int write_return_val;
+	//ssize_t nwrite;
+	
+	
+	
+	t = time(NULL);
+	time_ptr = localtime(&t);
+	if(time_ptr == NULL)
+	{
+		syslog(LOG_ERR, "localtime() function failed\n");
+		exit(EXIT_FAILURE);
+	}
+	else
+	{
+		syslog(LOG_INFO, "localtime() function succeed\n");
+	}
+	
+	timer_length = strftime(time_stamp,sizeof(time_stamp),"timestamp:%d.%b.%y - %k:%M:%S\n",time_ptr);
+	if(timer_length == 0)
+	{
+		syslog(LOG_ERR, "strftime() function failed\n");
+		exit(EXIT_FAILURE);
+	}
+	else
+	{
+		syslog(LOG_INFO, "strftime() function succeed\n");
+	}
+	//Print the time
+	printf("time value:%s\n",time_stamp);
+	
+	/*Write this time to the file*/
+	file_fd = open(FILE_STORAGE_PATH,O_APPEND | O_WRONLY);
+	if(file_fd == -1)
+	{
+		syslog(LOG_ERR, "Error while file open for appending\n");
+		exit(EXIT_FAILURE);
+	}
+	else
+	{
+		syslog(LOG_INFO, "Successfully appened the time data in the file\n");
+	}
+
+	mutex_return_val = pthread_mutex_lock(&mutex_lock);
+	if(mutex_return_val != 0)
+	{
+		syslog(LOG_ERR, "pthread_mutex_lock() failed \n");
+		exit(EXIT_FAILURE);
+	}
+	
+	write_return_val = write(file_fd,time_stamp,timer_length);
+	if (write_return_val == -1)
+	{
+		syslog(LOG_ERR, "write() to file failed\n");
+		exit(EXIT_FAILURE);
+	}
+	else if (write_return_val != timer_length)
+	{
+		syslog(LOG_ERR, "The file partially written\n");
+		exit(EXIT_FAILURE);
+	}
+	received_packet_size += timer_length;
+	
+	mutex_return_val = pthread_mutex_unlock(&mutex_lock);
+	if(mutex_return_val != 0)
+	{
+		syslog(LOG_ERR, "pthread_mutex_unlock() failed \n");
+		exit(EXIT_FAILURE);
+	}
+
+	close(file_fd);
+
+}
 
 /***********************************************************************************************
  * Function Name          : signal_handler
@@ -47,19 +155,19 @@ static void signal_handler (int signo)
     {
       printf("Caught SIGINT signal, exiting\n");
       unlink(FILE_STORAGE_PATH); //delete the file
-      free(output_buffer);
+      //free(output_buffer);
     }
   else if(signo == SIGTERM)
     {
       printf("Caught SIGTERM signal, exiting\n");
       unlink(FILE_STORAGE_PATH); //delete the file
-      free(output_buffer);
+      //free(output_buffer);
     }
   else if(signo == SIGKILL)
     {
       printf("Caught SIGKILL signal, exiting\n");
       unlink(FILE_STORAGE_PATH); //delete the file
-      free(output_buffer);
+      //free(output_buffer);
       close(socket_accept_fd);
       close(socket_fd);
     }
@@ -80,25 +188,27 @@ static void handle_socket()
   struct addrinfo *result_ptr;  
   struct sockaddr_in clientaddress;
   socklen_t client_sock_addr_size = sizeof(struct sockaddr); 
-  char buffer[BUFFER_SIZE] = {0};
+  //char buffer[BUFFER_SIZE] = {0};
 
   int addr_info;
   int socket_bind = 0; 
-  int received_packet_size = 0;
-  int file_fd = 0;
   int socket_listen = 0; 
-  int file_write;
-  int read_file_data;
-  int send_data;
-  int i;
-  int recvive_fd = 0;
+  //int file_write;
+  //int read_file_data;
+  //int send_data;
+  //int i;
+  //int recvive_fd = 0;
+  int sockopt_ret = 0;
+  int timer_ret = 0;
 
-  bool is_packet_received = false;
+  //bool is_packet_received = false;
 
-  char ch = 0;
+  SLIST_HEAD(slisthead, slist_data_s) head;
+  SLIST_INIT(&head);
+
+  struct itimerval interval_timer;
   char ipv_4[INET_ADDRSTRLEN];
 
-  memset(buffer,0,BUFFER_SIZE);
 
   //1. clear the hints first
   
@@ -138,7 +248,21 @@ static void handle_socket()
       syslog(LOG_INFO,"socket() creation succeed ");
     }
 
-
+	// setsockopt setting 
+	sockopt_ret = setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+	if(sockopt_ret < 0)
+	{
+		printf("Error! setsockopt() setting failed\n");
+		syslog(LOG_ERR,"setsockopt() setting failed");
+		freeaddrinfo(result_ptr);
+		exit(1);
+	}
+	else
+	{
+	  printf("setsockopt() setting succeed \n");
+         syslog(LOG_INFO,"setsockopt() setting  succeed ");
+	}
+	
 
   //4. Bind the socket
   
@@ -169,11 +293,34 @@ static void handle_socket()
   else
     {
       printf("File creation succeed\n");
-      syslog(LOG_INFO,"Error: File creation succeed");
+      syslog(LOG_INFO,"File creation succeed");
     }
 
   close(file_fd); //close fd after creating
+  //freeaddrinfo(result_ptr);
 
+
+ 	interval_timer.it_interval.tv_sec = 10; //timer interval of 10 secs
+	interval_timer.it_interval.tv_usec = 0;
+	interval_timer.it_value.tv_sec = 10; //time expiration of 10 secs
+	interval_timer.it_value.tv_usec = 0;
+	
+	timer_ret = setitimer(ITIMER_REAL, &interval_timer, NULL);
+	if(timer_ret == -1)
+	{
+		printf("setitimer() function failed");
+		syslog(LOG_ERR, "setitimer() function failed");
+	}
+	else
+	{
+		printf("setitimer() function succeed\n");
+		syslog(LOG_INFO,"setitimer() function succeed");
+	}
+
+	while(1)
+	{
+	
+	      //6. Listen on the socket
       socket_listen = listen(socket_fd, MAX_CONNECTIONS);
       if(socket_listen == -1)
         {
@@ -188,25 +335,6 @@ static void handle_socket()
           syslog(LOG_INFO,"Socket Listen succeed");
         }
 
-  while(1)
-    {
-      output_buffer = (char *) malloc((sizeof(char)*BUFFER_SIZE));
-      if(output_buffer == NULL)
-        {
-          printf("Error! Malloc has failed\n");
-          syslog(LOG_ERR, "Malloc has failed\n");
-          exit(1);
-        }
-      else
-        {
-          printf("Malloc succeed\n");
-          syslog(LOG_INFO, "Malloc succeed\n");
-        }
-      memset(output_buffer,0,BUFFER_SIZE);
-
-
-      //6. Listen on the socket
-	  
 
       //7. Accept the socket  
 	  
@@ -221,7 +349,7 @@ static void handle_socket()
       else
         {
           printf("accept() socket succeed\n");
-                 syslog(LOG_INFO,"accept() socket succeed");
+          syslog(LOG_INFO,"accept() socket succeed");
         }
 
       //get ip address
@@ -230,13 +358,89 @@ static void handle_socket()
       inet_ntop(AF_INET, &(addr->sin_addr),ipv_4,INET_ADDRSTRLEN);
       syslog(LOG_DEBUG,"Accepted the connection from %s",ipv_4);
       printf("Accepted the connection from %s\n",ipv_4);
+	  
+	  //allocating new node for the data
+	  datap = (slist_data_t *) malloc(sizeof(slist_data_t));
+	  SLIST_INSERT_HEAD(&head,datap,entries);
 
-      //8. Receive a packet
+	  //Inserting thread parameters now
+	  datap->thread_param.cl_accept_fd = socket_accept_fd;
+	  datap->thread_param.thread_comp_flag = false;
+	  datap->thread_param.mutex = &mutex_lock;
+	  
+	   pthread_create(&(datap->thread_param.thread_id), 			//the thread id to be created
+							NULL,			//the thread attribute to be passed
+							thread_handler,				//the thread handler to be executed
+							&datap->thread_param//the thread parameter to be passed
+							);	  
+	  
+	  
+	  printf("All thread that are created are now waiting to exit\n");
+	  
+	  SLIST_FOREACH(datap,&head,entries)
+	  {
+			pthread_join(datap->thread_param.thread_id,NULL);
+			if(datap->thread_param.thread_comp_flag == true)
+			{
+				datap = SLIST_FIRST(&head);
+				SLIST_REMOVE_HEAD(&head, entries);
+				free(datap);
+			}
+	 }  
+	 printf("All threads are exited!\n");
+	 syslog(LOG_DEBUG,"Closed connection from %s",ipv_4);
+	 printf("Closed connection from %s\n",ipv_4);
+		
+	}
+	  
+	close(socket_accept_fd);
+	close(socket_fd);
+ }
+ 
+ /***********************************************************************************************
+* Name          : thread_handler
+* Description   : performs the thread specific client data read, write to file and send steps. 
+* Parameters    : thread parameter
+* RETURN        : thread parameter
+***********************************************************************************************/
+void* thread_handler(void* thread_param)
+{
+	//bool packet_comp = false;
+	int i;
+	//int recv_ret = 0;
+	int mutex_return_val = 0;
+	char buffer[BUFFER_SIZE] = {0};
+	char *output_buffer  = NULL;
+	int file_fd =0;
+	int send_data =0;
+	bool is_packet_received;
+	int file_write;
+	int read_file_data;
+	int recvive_fd = 0;
+	
+	thread_params * params = (thread_params *) thread_param;
+	
+	output_buffer = (char *) malloc((sizeof(char)*BUFFER_SIZE));
+	
+	if(output_buffer == NULL)
+	{
+		syslog(LOG_ERR, "Malloc failed\n");
+		printf("Malloc failed\n");
+		exit(1);
+	}
+	else
+	{
+		printf("accept() Malloc succeed\n");
+        syslog(LOG_INFO,"Malloc() socket succeed");
+	}
+	memset(output_buffer,0,BUFFER_SIZE);
+	
+	 //8. Receive a packet
 	is_packet_received = false;
       while(!is_packet_received) 
         {
-          recvive_fd = recv(socket_accept_fd, buffer, BUFFER_SIZE ,0);
-          //printf("buffer1 = %s \n",buffer);
+          recvive_fd = recv(params->cl_accept_fd, buffer, BUFFER_SIZE ,0);
+
           if(recvive_fd < 0)
             {
               printf("Error: Receive packet failed\n");
@@ -248,8 +452,8 @@ static void handle_socket()
               printf("Receive packet succeed\n");
               syslog(LOG_INFO,"Receive packet succeed");
             }
-
-          for(i = 0;i < BUFFER_SIZE;i++)
+			
+		for(i = 0;i < BUFFER_SIZE;i++)
             { 
               if(buffer[i] == '\n')  // check at end of packet
                 {
@@ -258,7 +462,7 @@ static void handle_socket()
                   break;
                 }
             }
-          received_packet_size += i; //increment the size of packet
+	    received_packet_size += i; //increment the size of packet
           output_buffer = (char *) realloc(output_buffer,(received_packet_size+1)); //reloaction to a buffer big in size
           if(output_buffer == NULL)
             {
@@ -275,8 +479,15 @@ static void handle_socket()
           strncat(output_buffer,buffer,i);
           memset(buffer,0,BUFFER_SIZE); 
         }
-	printf("Output buffer = %s \n",output_buffer);
-	printf("Length = %ld \n",strlen(output_buffer));
+		
+		mutex_return_val = pthread_mutex_lock(params->mutex);
+		if (mutex_return_val != 0)
+		{
+			printf("pthread_mutex_lock() has failed\n");
+			syslog(LOG_ERR, "pthread_mutex_lock() has failed\n");
+			exit(EXIT_FAILURE);
+		}
+	
       //9. start writing to the file by creating the file in append mode
 	  
       file_fd = open(FILE_STORAGE_PATH,O_APPEND | O_WRONLY); // open file in append mode and write the data received from the client in it
@@ -327,9 +538,9 @@ static void handle_socket()
         {
           printf("File reading succeed\n");
           syslog(LOG_ERR,"File reading succeed");
-        }
-
-      //10. Sending data 
+        }	
+	
+	//10. Sending data 
 	  
       for(i=0;i<received_packet_size;i++)
         {
@@ -345,7 +556,7 @@ static void handle_socket()
               //printf("File Read succeed\n");
               syslog(LOG_INFO,"File Read succeed");
             }
-          send_data  = send(socket_accept_fd,&ch,1,0);  //send
+          send_data  = send(params->cl_accept_fd,&ch,1,0);  //send
           if(send_data == -1)
             {
               printf("Error in sending file data\n");
@@ -355,14 +566,26 @@ static void handle_socket()
             //printf("Send succeeded\n");
         }
       close(file_fd);
-      free(output_buffer); // free the buffer
-      //close(socket_fd);
-      //close(socket_accept_fd);
-  }
-      //11. Close the  socket_fd and socket_accept_fd
 	  
+	  mutex_return_val = pthread_mutex_unlock(params->mutex);
+	 if(mutex_return_val != 0)
+	 {
+        printf("pthread_mutex_unlock() has failed\n");
+        syslog(LOG_ERR,"pthread_mutex_unlock() has failed");
+		exit(1);
+	 }
 
-    }
+	params->thread_comp_flag = true;
+
+	close(params->cl_accept_fd);
+	  
+    free(output_buffer); // free the buffer
+	
+	return params;
+}
+ 
+  //}
+	  
 
 /***********************************************************************************************
  * Name             : main
@@ -387,6 +610,17 @@ static void handle_socket()
         syslog(LOG_ERR, "Failed to configure SIGTERM handler\\n");
         exit(EXIT_FAILURE);
       }
+	if(signal(SIGALRM, timer_handler)==SIG_ERR)
+	 {
+		printf("Failed to configure SIGALRM handler\n");
+		syslog(LOG_ERR, "Failed to configure SIGALRM handler\n");
+		exit(EXIT_FAILURE);
+	 }
+	 
+	 pthread_mutex_init(&mutex_lock, NULL);
+	 	
+	 signal(SIGALRM,timer_handler); //Timer configutaion for A6-P1
+	 
     if(argc > 1) 
       {
 		  if((strcmp("-d",(char*)argv[1])) == 0)
