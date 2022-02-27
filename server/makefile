@@ -7,7 +7,7 @@ LDFLAG = -pthread -lrt
 #Source
 SRCS = aesdsocket.c
 
-#Object
+
 OBJS = $(SRCS:.c=.o)
 
 # Target
