@@ -391,7 +391,7 @@ static void handle_socket()
 				datap = SLIST_FIRST(&head);
 				SLIST_REMOVE_HEAD(&head, entries);
 				free(datap);
-				break;
+				//break;
 			}
 	 }  
 	 printf("All threads are exited!\n");
