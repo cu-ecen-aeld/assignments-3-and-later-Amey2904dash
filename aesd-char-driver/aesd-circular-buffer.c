@@ -80,6 +80,7 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
         buffer->out_offs++; //incremnet the head
         return;
    }
+   
    else
    {
     buffer->entry[buffer->in_offs] = *(add_entry); //add string and size data to the buffer
