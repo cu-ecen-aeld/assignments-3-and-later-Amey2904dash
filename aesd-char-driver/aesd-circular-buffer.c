@@ -32,6 +32,34 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     /**
     * TODO: implement per description
     */
+    
+    size_t sum_val = 0, last_size_val = 0 , diff = 0;
+    uint8_t index = buffer->out_offs;
+    
+    do
+    {
+    	// Calculate the sum and index values
+        sum_val += buffer->entry[index].size; //increment the sum
+        last_size_val = buffer->entry[index].size;	// calculate the last size entry value
+        
+        if(char_offset <= (sum_val-1))        //if found in 1st block
+        {
+            diff = (sum_val - last_size_val);
+            *entry_offset_byte_rtn = char_offset - diff;
+            return &buffer->entry[index];
+        }
+        else
+        {
+	 	index++; //increment the index
+		if(index == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
+		{
+		    index = 0;
+		}
+        }
+            
+    } while(index != buffer->in_offs);
+    
+    
     return NULL;
 }
 
@@ -47,6 +75,29 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
     /**
     * TODO: implement per description 
     */
+    
+   if(buffer->full == true) // check if buffer is full 
+   {
+       //add string and size data to the buffer(overwrite)
+        buffer->entry[buffer->in_offs] = *(add_entry);
+        //increment both the head and tail
+        buffer->in_offs++; //incremnet the tail
+        buffer->out_offs++; //incremnet the head
+        return;
+   }
+   else
+   {
+    buffer->entry[buffer->in_offs] = *(add_entry); //add string and size data to the buffer
+    buffer->in_offs++; //increment the head
+
+    if(buffer->in_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) //If tail reaches end, roll back(reset tail to first)
+        buffer->in_offs = 0;
+
+    if(buffer->in_offs == buffer->out_offs) //Check if full, i.e out_offs == in_offs , head == tail
+        buffer->full = true;
+    else
+        buffer->full = false;
+  }
 }
 
 /**
