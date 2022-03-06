@@ -89,6 +89,7 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
     { 
         buffer->in_offs = 0;
     }
+    
 
     if(buffer->in_offs == buffer->out_offs)  //Check if full, i.e out_offs == in_offs , head == tail
     { 
