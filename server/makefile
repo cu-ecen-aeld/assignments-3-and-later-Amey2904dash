@@ -1,12 +1,25 @@
 CC=$(CROSS_COMPILE)gcc
+
 CFLAGS=-Werror -Wall -g
 
-all: aesdsocket
-default: aesdsocket
+LDFLAG = -pthread -lrt 
 
-aesdsocket: aesdsocket.o
-	$(CC) -o aesdsocket aesdsocket.o	
+#Source
+SRCS = aesdsocket.c
+
+
+OBJS = $(SRCS:.c=.o)
+
+# Target
+TARGET = aesdsocket
+
+all: $(TARGET)
+default: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAG) $^ -o $@
 	
-.PHONY : clean
-clean :
-	rm -f $(TARGET) *.o
+.PHONY: clean
+
+clean:
+	$(RM) $(TARGET) *.o
