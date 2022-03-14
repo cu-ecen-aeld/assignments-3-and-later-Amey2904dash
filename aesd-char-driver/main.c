@@ -162,7 +162,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 		if(dev->buff_entry.buffptr == NULL)
 		{
 			PDEBUG("kmalloc error");
-			goto exit_error;
+			goto error_exit;
 		}
 	}
 	
