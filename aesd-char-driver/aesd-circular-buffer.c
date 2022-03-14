@@ -86,7 +86,6 @@ const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, 
             buffer->in_offs = 0;
 
         buffer->out_offs = buffer->in_offs; 
-        return;
    }
    
    else
