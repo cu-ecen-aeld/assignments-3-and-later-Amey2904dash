@@ -24,7 +24,14 @@
 #include <sys/time.h>
 
 /******************MACROS******************************/
-#define FILE_STORAGE_PATH   "/var/tmp/aesdsocketdata"
+//For Assignment 8.
+#define USE_AESD_CHAR_DEVICE	(1)
+#if (USE_AESD_CHAR_DEVICE == 1)
+	#define FILE_STORAGE_PATH  	"/dev/aesdchar";
+#else
+	#define FILE_STORAGE_PATH 	"/var/tmp/aesdsocketdata"
+#endif
+
 #define PORT "9000"
 #define SOCKET_FAMILY     	AF_INET6
 #define SOCKET_TYPE       	SOCK_STREAM
@@ -68,6 +75,7 @@ slist_data_t *datap = NULL;
 * Input Parameters  : sig_no - the signal received to be handled.
 * Returns        	: None
 ***********************************************************************************************/
+#if (USE_AESD_CHAR_DEVICE==0)
 static void timer_handler(int sig_no)
 {
 	
@@ -148,6 +156,7 @@ static void timer_handler(int sig_no)
 	close(file_fd);
 
 }
+#endif
 
 /***********************************************************************************************
  * Function Name          : signal_handler
@@ -305,7 +314,7 @@ static void handle_socket()
   close(file_fd); //close fd after creating
   //freeaddrinfo(result_ptr);
 
-
+	#if (USE_AESD_CHAR_DEVICE==0)
  	interval_timer.it_interval.tv_sec = 10; //timer interval of 10 secs
 	interval_timer.it_interval.tv_usec = 0;
 	interval_timer.it_value.tv_sec = 10; //time expiration of 10 secs
@@ -322,7 +331,7 @@ static void handle_socket()
 		printf("setitimer() function succeed\n");
 		syslog(LOG_INFO,"setitimer() function succeed");
 	}
-
+        #endif
 	while(1)
 	{
 	
@@ -611,18 +620,14 @@ void* thread_handler(void* thread_param)
         syslog(LOG_ERR, "Failed to configure SIGINT handler\n");
         exit(1);
       }
+    #if (USE_AESD_CHAR_DEVICE == 0)
     if(signal(SIGTERM, signal_handler)==SIG_ERR)
       {
         printf("Failed to configure SIGTERM handler\n");
         syslog(LOG_ERR, "Failed to configure SIGTERM handler\\n");
         exit(EXIT_FAILURE);
       }
-	if(signal(SIGALRM, timer_handler)==SIG_ERR)
-	 {
-		printf("Failed to configure SIGALRM handler\n");
-		syslog(LOG_ERR, "Failed to configure SIGALRM handler\n");
-		exit(EXIT_FAILURE);
-	 }
+      #endif
 	 
 	 pthread_mutex_init(&mutex_lock, NULL);
 	 	
